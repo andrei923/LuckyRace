@@ -15,7 +15,13 @@ import:
 options:
 
 	#do not touch this -_-
-	plugin-version: 1.0.0
+	plugin-version: 2.0.0
+
+
+local effect add %string% to nbt of %entity%:
+	trigger:
+		set {_nbtent} to new NBTEntity(expr-2)
+		{_nbtent}.mergeCompound(new NBTContainer(expr-1))	
 
 expression %item% with [custom] nbt %string%:
 	return type: item
@@ -36,13 +42,17 @@ local expression replacer %texts% with %texts% in %text%:
 			replace all "%loop-value-1%" with ({_n}th element of exprs-2 ? "") in {_result}
 		return {_result}	
 
-local effect [leaf] hide %player% from %player%:
+command tester:
 	trigger:
-		expr-2.hidePlayer(expr-1)
+		loop {-race::cache::arena::%{-race::cache::player::%player%::arena}%::BattleMapSpawns::*}:
+			teleport player to loop-value-1
+			wait a second
 
-local effect [leaf] show %player% to %player%:
+command tppos:
 	trigger:
-		expr-2.showPlayer(expr-1)
+		teleport player to {-race::cache::arena::%{-race::cache::player::%player%::arena}%::BattleMapPosition2}
+		broadcast "%{-race::cache::arena::%{-race::cache::player::%player%::arena}%::BattleMapPosition2}%"
+
 
 command luckyrace [<text = help>] [<text>] [<text>] [<number>]:
 	aliases: lr, race
@@ -59,12 +69,20 @@ command luckyrace [<text = help>] [<text>] [<text>] [<number>]:
 				send centered "&7☁☁☁☁☁☁ &e&nGeneral Setup&r &7☁☁☁☁☁☁" to player															
 				send "&e/luckyrace setLobby"				
 				send "&e/luckyrace setWaitingLobby"						
-				send centered "&7☁☁☁☁☁☁ &e&nMap Setup&r &7☁☁☁☁☁☁" to player					
+				send centered "&7☁☁☁☁☁☁ &e&nMap Setup&r &7☁☁☁☁☁☁" to player										
 				send "&e/luckyrace createMap &8(&7map_name&8)"								
 				send "&e/luckyrace setPos &8(&7map_name&8) &8(&a1&7/&a2&8) "							
 				send "&e/luckyrace setSpawn &8(&7map_name&8)"		
+				send "&e/luckyrace setFinish &8(&7map_name&8)"					
+				send "&e/luckyrace getLuckyBlock &8(&7map_name&8)"					
 				send "&e/luckyrace saveMap &8(&7map_name&8)"							
 				send "&e/luckyrace deleteMap &8(&7map_name&8)"
+				send centered "&7☁☁☁☁☁☁ &e&nBattleMap Setup&r &7☁☁☁☁☁☁" to player										
+				send "&e/luckyrace createBattleMap &8(&7map_name&8)"								
+				send "&e/luckyrace setBattleMapPos &8(&7map_name&8) &8(&a1&7/&a2&8) "							
+				send "&e/luckyrace setBattleMapSpawn &8(&7map_name&8) &8(&7id&8)"						
+				send "&e/luckyrace saveBattleMapMap &8(&7map_name&8)"							
+				send "&e/luckyrace deleteBattleMapMap &8(&7map_name&8)"				
 				send centered "&7☁☁☁☁☁☁☁☁☁☁☁☁☁☁☁☁☁☁☁☁" to player
 				stop
 		if arg-1 is "play":		
@@ -75,28 +93,91 @@ command luckyrace [<text = help>] [<text>] [<text>] [<number>]:
 				open chest inventory with 1 rows named yaml value "Menus.Stats.Menu" from "leaf.race.config" to player
 				wait a tick									
 				set {_lore::*} to yaml list "Menus.Stats.Lore" from "leaf.race.config"
-				loop "PlayedGames", "Wins", "Kills", "Loses", "BlocksDestroyed", "Checkpoints" and "BlocksPlaced":
+				loop "PlayedGames", "Wins", "Kills", "Loses", "BlocksDestroyed", "LuckyBlocks", "Checkpoints" and "BlocksPlaced":
 					set {_int} to yaml value "Stats.%loop-value-1%" from "leaf.race.playerdata.%uuid of player%"
 					replace all "{%loop-value-1%}" with "%{_int}%" in {_lore::*}
-				make a gui slot 4 of player with paper named yaml value "Menus.Stats.Name" from "leaf.race.config" with lore colored {_lore::*} to do nothing								
+				set slot 4 of player's current inventory to paper named yaml value "Menus.Stats.Name" from "leaf.race.config" with lore colored {_lore::*}							
 		if arg-1 is "leave":	
 			race_leave(player)
 		if arg-1 is "start":	
 			if player has permission "luckyrace.start":		
 				race_generate_map({-race::cache::player::%player%::arena})		
+#
+		if arg-1 is "createBattleMap":	
+			if player has permission "luckyrace.admin":		
+				if arg-2 is set:
+					if yaml value "BattleMap.%arg-2%.State" from "leaf.race.maps" is not set:
+						set yaml value "BattleMap.%arg-2%.State" from "leaf.race.maps" to "created"
+						send "&cSetup &8- &aBattle Map &c%arg-2% &ahas been created!"
+						save yaml "leaf.race.maps"
+					else:
+						send "&aThis BattleMap map already exists!"	
+				else:
+					send "&cSpecify the map name."																				
+		if arg-1 is "setBattleMapSpawn":
+			if player has permission "luckyrace.admin":		
+				if yaml value "BattleMap.%arg-2%.State" from "leaf.race.maps" is "created" or "ready":
+					if arg-3 is set:
+						set yaml value "BattleMap.%arg-2%.Spawns.%arg-3%" from "leaf.race.maps" to location of player
+						send "&cSetup &8- &aSpawn for Battle Map &3%arg-2% &awith id &3%arg-3% &ahas been set!"			
+						save yaml "leaf.race.maps"			
+						stop	
+					else:
+						send "&cYou must specify a name or an id for it."											
+				else:
+					send "&cBattle Map not found."	
+
+		if arg-1 is "setBattleMapPos" or "setBattleMapPosition":
+			if player has permission "luckyrace.admin":		
+				if yaml value "BattleMap.%arg-2%.State" from "leaf.race.maps" is "created" or "ready":
+					if arg-3 is "1" or "2":
+						set yaml value "BattleMap.%arg-2%.Position.%arg-3%" from "leaf.race.maps" to location of player
+						send "&cSetup &8- &aPosition &3%arg-3% &afor Battle Map &3%arg-2% &ahas been set!"
+					else:
+						send "&cSetup &8- &a1 or 2!" 
+				else:
+					send "&cBattle Map not found."	
+
+		if arg-1 is "saveBattleMap":	
+			if player has permission "luckyrace.admin":	
+				if yaml value "BattleMap.%arg-2%.State" from "leaf.race.maps" is "ready":
+					send "&cSetup &8- &aThis battle map is already created, saving the changes if there's any..." 
+					set yaml value "BattleMap.%arg-2%.State" from "leaf.race.maps" to "created"
+					make player execute command "luckyrace saveBattleMap %arg-2%"
+					stop			
+				if yaml value "BattleMap.%arg-2%.State" from "leaf.race.maps" is "created":
+					if yaml value "BattleMap.%arg-2%.Position.1" from "leaf.race.maps" is set:
+						if yaml value "BattleMap.%arg-2%.Position.2" from "leaf.race.maps" is set:
+							if yaml value "BattleMap.%arg-2%.Spawns" from "leaf.race.maps" is set:
+								set yaml value "BattleMap.%arg-2%.State" from "leaf.race.maps" to "ready"
+								add arg-2 to {-race::cache::battlemaps::*}
+								save yaml "leaf.race.maps"
+								save schematic "plugins/LuckyRace/battlemaps/%arg-2%.schem" from yaml value "BattleMap.%arg-2%.Position.1" from "leaf.race.maps" and yaml value "BattleMap.%arg-2%.Position.2" from "leaf.race.maps"
+								send "&cSetup &8- &aMap &c%arg-2% &ahas been saved."
+								wait 3 seconds
+								replace blocks between yaml value "BattleMap.%arg-2%.Position.1" from "leaf.race.maps" and yaml value "BattleMap.%arg-2%.Position.2" from "leaf.race.maps" with air
+							else:
+								send "&cSetup &8- &aSpawn is not set!" 							
+						else:
+							send "&cSetup &8- &aPosition 2 is not set!"								
+					else:
+						send "&cSetup &8- &aPosition 1 is not set!" 																																																																																																																								
+				else:
+					send "&cSetup &8- &aYou didn't created this battle map yet."
+#
 		if arg-1 is "createMap":	
 			if player has permission "luckyrace.admin":		
 				if arg-2 is set:
 					if yaml value "%arg-2%.State" from "leaf.race.maps" is not set:
 						set yaml value "%arg-2%.State" from "leaf.race.maps" to "created"
-						set yaml value "%arg-2%.IslandDistance" from "leaf.race.maps" to 50
+						set yaml value "%arg-2%.IslandDistance" from "leaf.race.maps" to 80
+						set yaml value "%arg-2%.GameTime" from "leaf.race.maps" to 9
 						send "&cSetup &8- &aMap &c%arg-2% &ahas been created!"
-						make player execute command "duels setSpawn %arg-2%"
 						save yaml "leaf.race.maps"
 					else:
 						send "&aThis map already exists!"	
 				else:
-					send "&cMap not found."																				
+					send "&cSpecify the map name."																			
 		if arg-1 is "setSpawn":
 			if player has permission "luckyrace.admin":		
 				if yaml value "%arg-2%.State" from "leaf.race.maps" is "created" or "ready":
@@ -106,6 +187,29 @@ command luckyrace [<text = help>] [<text>] [<text>] [<number>]:
 					stop					
 				else:
 					send "&cMap not found."	
+		if arg-1 is "setFinish":
+			if player has permission "luckyrace.admin":		
+				if yaml value "%arg-2%.State" from "leaf.race.maps" is "created" or "ready":
+					loop all blocks in radius 3 of player:
+						if "%loop-block%" contains "plate":
+							set yaml value "%arg-2%.Finish" from "leaf.race.maps" to location of loop-block
+							send "&cSetup &8- &aFinish for Map &3%arg-2% &ahas been set!"			
+							save yaml "leaf.race.maps"
+							stop	
+					send "&cYou must stay on a pressure plate~!/."		
+					stop					
+				else:
+					send "&cMap not found."						
+		if arg-1 is "getLuckyBlock":
+			if player has permission "luckyrace.admin":		
+				if yaml value "%arg-2%.State" from "leaf.race.maps" is "created" or "ready":
+					give 1 of gold block named "&eLuckyBlock" to player
+					set metadata value "LuckyBlockSetup" of player to arg-2
+					send "&cSetup &8- &aSpawn for Map &3%arg-2% &ahas been set!"			
+					save yaml "leaf.race.maps"			
+					stop					
+				else:
+					send "&cMap not found."						
 		if arg-1 is "setPos" or "setPosition":
 			if player has permission "luckyrace.admin":		
 				if yaml value "%arg-2%.State" from "leaf.race.maps" is "created" or "ready":
@@ -124,29 +228,34 @@ command luckyrace [<text = help>] [<text>] [<text>] [<number>]:
 		if arg-1 is "setWaitingLobby":	
 			if player has permission "luckyrace.admin":
 				set yaml value "Locations.WaitingLobby" from "leaf.race.data" to location of player
-				save yaml "leaf.race.config"
+				save yaml "leaf.race.data"
 				send "&cSetup &8- &aWaiting Lobby set."																								
 		if arg-1 is "reload":		
 			if player has permission "luckyrace.admin":
-				broadcast "&cSetup &8- &aReloading..."
-				wait a tick
+				if {-race::cache::Loading} is set:
+					broadcast "&cLuckyRace &8- &aAlready reloading, please wait..."
+					stop
+				broadcast "&cLuckyRace &8- &aReloading, please wait..."
 				make console execute command "sk reload %script%"
 		if arg-1 is "saveMap":	
 			if player has permission "luckyrace.admin":	
 				if yaml value "%arg-2%.State" from "leaf.race.maps" is "ready":
 					send "&cSetup &8- &aThis map is already created, saving the changes if there's any..." 
 					set yaml value "%arg-2%.State" from "leaf.race.maps" to "created"
-					make player execute command "duels saveMap %arg-2%"
+					make player execute command "luckyrace saveMap %arg-2%"
 					stop			
 				if yaml value "%arg-2%.State" from "leaf.race.maps" is "created":
 					if yaml value "%arg-2%.Position.1" from "leaf.race.maps" is set:
 						if yaml value "%arg-2%.Position.2" from "leaf.race.maps" is set:
 							if yaml value "%arg-2%.Spawn" from "leaf.race.maps" is set:
-								set yaml value "%arg-2%.State" from "leaf.race.maps" to "ready"
-								add arg-2 to {-race::cache::maps::*}
-								save yaml "leaf.race.maps"
-								save schematic "plugins/LuckyRace/maps/%arg-2%.schem" from yaml value "%arg-2%.Position.1" from "leaf.race.maps" and yaml value "%arg-2%.Position.2" from "leaf.race.maps"
-								send "&cSetup &8- &aMap &c%arg-2% &ahas been saved."
+								if yaml value "%arg-2%.Finish" from "leaf.race.maps" is set:
+									set yaml value "%arg-2%.State" from "leaf.race.maps" to "ready"
+									add arg-2 to {-race::cache::maps::*}
+									save yaml "leaf.race.maps"
+									save schematic "plugins/LuckyRace/maps/%arg-2%.schem" from yaml value "%arg-2%.Position.1" from "leaf.race.maps" and yaml value "%arg-2%.Position.2" from "leaf.race.maps"
+									send "&cSetup &8- &aMap &c%arg-2% &ahas been saved."
+								else:
+									send "&cSetup &8- &aFinish is not set!"									
 							else:
 								send "&cSetup &8- &aSpawn is not set!" 							
 						else:
@@ -160,8 +269,6 @@ command luckyrace [<text = help>] [<text>] [<text>] [<number>]:
 				send "&fArena: &a%{-race::cache::player::%player%::arena}%"	
 				send "&fStatus: &a%{-race::cache::arena::%{-race::cache::player::%player%::arena}%::status}%"	
 				send "&fPlayers: &a%size of {-race::cache::arena::%{-race::cache::player::%player%::arena}%::ninjas::*}%"	
-				loop "Red" and "Blue":
-					send "&aTeam <%loop-value-1%>%loop-value-1%, &fPlayers: &c%{-race::cache::arena::%{-race::cache::player::%player%::arena}%::team::%loop-value-1%::*}%"
 		if arg-1 is "deleteMap":	
 			if player has permission "luckyrace.admin":		
 				if yaml value "%arg-2%.State" from "leaf.race.maps" is set:
@@ -198,29 +305,27 @@ function race_play_sound(p: player, soundLegacy: string, soundNew: string):
 			set {-race::cache::sounds::%{_soundLegacy}%} to Sound..{_soundLegacy}
 		else:
 			set {-race::cache::sounds::%{_soundLegacy}%} to Sound..{_soundNew}
-	else:	
-		{_p}.playSound(location of {_p}, {-mb::cache::sounds::%{_soundLegacy}%}, 1 and 1)	
+	{_p}.playSound(location of {_p}, {-race::cache::sounds::%{_soundLegacy}%}, 1 and 1)	
 
-function race_clear_player(p: player):						
+function race_clear_player(p: player, inv: boolean = true):						
 	heal {_p}
 	extinguish {_p}
 	set {_p}'s food to 20	
-	clear {_p}'s level
-	clear {_p}'s inventory
+	if {_inv} is true:
+		clear {_p}'s level
+		clear {_p}'s inventory
+		set {_p}'s helmet to air	
+		set {_p}'s chestplate to air
+		set {_p}'s leggings to air
+		set {_p}'s boots to air		
+		set cursor slot of {_p} to air
+	close {_p}'s inventory		
 	{_p}.setFlying(false)
 	{_p}.setAllowFlight(false)	
 	set {_p}'s gamemode to survival
 	loop ...{_p}.getActivePotionEffects():
 		{_p}.removePotionEffect(loop-value.getType())	
 	set velocity of {_p} to new vector 0, 0, 0	
-	#
-	set {_p}'s helmet to air	
-	set {_p}'s chestplate to air
-	set {_p}'s leggings to air
-	set {_p}'s boots to air		
-	set cursor slot of {_p} to air
-	close {_p}'s inventory
-	#	
 	delete metadata value "RACE_DEAD" of {_p}
 	delete metadata value "RACE_KILLER" of {_p}
 
@@ -232,7 +337,7 @@ function race_start_countdown(arena: text):
 			size of {-race::cache::arena::%{_arena}%::ninjas::*} >= 2
 			remove 1 from {-race::cache::arena::%{_arena}%::seconds}	
 			if {-race::cache::arena::%{_arena}%::seconds} = 1 or 2 or 3 or 4 or 5 or 10:
-				send replacer "{seconds}" with "%{-race::cache::arena::%{_arena}%::seconds}%" in yaml value "Messages.Starting" from "leaf.mb.config" to {-race::cache::arena::%{_arena}%::ninjas::*}	
+				send replacer "{seconds}" with "%{-race::cache::arena::%{_arena}%::seconds}%" in yaml value "Messages.Starting" from "leaf.race.config" to {-race::cache::arena::%{_arena}%::ninjas::*}	
 			if {-race::cache::arena::%{_arena}%::seconds} = 1:
 				size of {-race::cache::arena::%{_arena}%::ninjas::*} >= 3:
 					race_generate_map({_arena})
@@ -242,6 +347,147 @@ function race_start_countdown(arena: text):
 			wait a second			
 		else:
 			stop
+			
+function race_separe(p: player):
+	loop all players:	
+		loop-value-1's world is {_p}'s world
+		if {-race::cache::player::%{_p}%::arena} is {-race::cache::player::%loop-value-1%::arena}:
+			reveal {_p} to loop-value-1
+			reveal loop-value-1 to {_p}
+		else:
+			hide {_p} from loop-value-1
+			hide loop-value-1 from {_p}
+		wait a tick	
+
+function race_block_surprise(p: player, loc: location, type: string):
+	chance of 50%:
+		drop a random element out of {-race::cache::LootPool::*} at block above {_loc} without velocity
+		FastParticle.spawnParticle({_loc}.getWorld(), ParticleType.VILLAGER_HAPPY, {_loc} and 2)
+		stop
+	set {_w} to {_loc}.getWorld()
+	#
+	set {_type} to "%rounded random number between 1 and 12%"
+
+	if {_type} is "1":
+		add 3 to y-coords of {_loc}
+		loop all blocks in radius 5 of {_loc}:
+			loop-block is sand
+			set metadata value "AlreadyExist" of loop-value-1 to true	
+		loop all blocks in radius 2 of {_loc}:
+			loop-block is air	
+			set loop-block to sand
+		wait a second
+		loop all blocks in radius 5 of {_loc}:
+			loop-block is sand
+			metadata value "AlreadyExist" of loop-value-1 is not set
+			if {-race::cache::arena::%{-race::cache::player::%{_p}%::arena}%::OMAE-MO-SHINDEIRU::%location of loop-block%} is not set:
+				set {-race::cache::arena::%{-race::cache::player::%{_p}%::arena}%::OMAE-MO-SHINDEIRU::%location of loop-block%} to location of loop-block								
+	#
+	if {_type} is "2":
+		loop 3 times:
+			loop players in radius 3 of {_loc}:
+				create lightning at location of loop-value-2
+			wait a second
+	#
+	if {_type} is "3":
+		spawn chicken at {_loc}
+		spawn baby zombie at {_loc}
+		wait a second
+		make spawned baby zombie ride spawned chicken	
+	#	
+	if {_type} is "4":
+		set {_name} to a random element out of "Bob", "Dweeb", "Elon Tusk", "Weeb", "TOO BAD!" and "Dorel"	
+		set {_randomMob} to a random element out of "Skeleton" or "Blaze" or "Zombie" or "Pigman" or "Spider" or "Villager"
+		set {_mobType} to {_randomMob} parsed as entity type
+		spawn {_mobType} at {_loc}
+		loop all entities in radius 1 of {_loc}:
+			if loop-entity is {_mobType}:
+				set {_npc} to loop-entity		
+		set {_npc}'s name to "&e%{_name}%"
+		set {_npc}'s tool to any axe
+		set {_npc}'s helmet to any helmet	
+		set {_npc}'s chestplate to any chestplate
+		set {_npc}'s leggings to any leggings
+		set {_npc}'s boots to any boots							
+	#
+	if {_type} is "5":
+		loop all blocks in radius 1 of {_loc}:
+			loop-block is air
+			set loop-block to lava					
+	#	
+	if {_type} is "6":
+		set {_backup} to {_loc}
+		add 15 to y-coords of {_loc}
+		loop 5 times:
+			spawn chicken at {_loc}
+			set {_npc} to spawned chicken
+			push {_npc} upwards at speed 1
+			loop players in radius 5 of {_backup}:
+				set {_p} to loop-value-2
+			set {_vector} to vector between {_npc} and {_p}
+			push {_npc} {_vector}
+			wait a second
+			create a safe explosion of force 2 at {_npc}
+	#
+	if {_type} is "7":
+		loop 2 times:
+			create lightning at {_p}
+			wait a second
+
+	if {_type} is "8":			
+		spawn primed tnt at {_loc}
+
+	if {_type} is "9":			
+		spawn a primed tnt 10 meters above {_loc}
+	if {_type} is "10":			
+		spawn 10 sheep at {_loc}
+
+	if {_type} is "11":			
+		push {_p} upwards at speed 5
+		set block under {_p} to slime block or water
+
+	if {_type} is "12":			
+		spawn creeper at {_loc}
+
+function race_break_block(loc: location):
+	loop all entities in radius 2 of {_loc}:
+		loop-entity is armor stand
+		clear loop-entity
+	set block at {_loc} to air	
+	delete metadata value "LuckyBlock" of block at {_loc}
+	wait a tick
+	FastParticle.spawnParticle({_loc}.getWorld(), ParticleType.HEART, {_loc} and 1)
+	FastParticle.spawnParticle({_loc}.getWorld(), ParticleType.EXPLOSION_LARGE, {_loc} and 1)	
+
+function race_spawn_block(loc: location):
+# Random radius block spawn.
+	set block at {_loc} to air
+	set {_backup} to {_loc}
+	loop all blocks in radius 5 of {_loc}:
+		block above loop-value-1 is air
+		block under loop-value-1 is solid
+		add location of loop-value-1 to {_valid::*}
+	set {_loc} to a random element out of {_valid::*}
+#	
+	if {_loc} is not set:
+		set {_loc} to {_backup}
+	{_loc}.getChunk().load()
+#	set {_loc} to location of block at {_loc}
+	set block at {_loc} to yellow glass
+	set metadata value "LuckyBlock" of block at {_loc} to true	
+	remove 1.7 from y-coords of {_loc}
+	spawn an armor stand at {_loc}
+	set {_stand} to spawned armor stand
+	{_stand}.setVisible(false)
+	{_stand}.setGravity(false)	
+#	{_stand}.setSmall(true)		
+	set {_head} to a random element out of {-race::cache::Items::LuckyBlocks::*}
+	set {_stand}'s helmet to {_head}
+
+on explosion:
+	loop exploded blocks:
+		if metadata value "LuckyBlock" of loop-block is set:
+			cancel event
 
 function race_join_arena(p: player, arena: text):
 	set {-race::cache::player::%{_p}%::state} to "IN-GAME"
@@ -252,21 +498,17 @@ function race_join_arena(p: player, arena: text):
 	if {-race::cache::arena::%{_arena}%::status} is "WAITING":
 		if size of {-race::cache::arena::%{_arena}%::ninjas::*} = 3:
 			race_start_countdown({_arena})
-	#Separe players.
-	loop all players:	
-		if {-race::cache::player::%{_p}%::arena} is {-race::cache::player::%loop-value-1%::arena}:
-			leaf show {_p} to loop-value-1
-			leaf show loop-value-1 to {_p}
-		else:
-			leaf hide {_p} from loop-value-1
-			leaf hide loop-value-1 from {_p}
-		wait a tick	
+	race_separe({_p})
 
 function race_play(p: player):
-	loop {-race::arenas::*}:
+	loop {-race::cache::arenas::*}:
 		if {-race::cache::arena::%loop-value-1%::status} is "STARTING" or "WAITING":
 			race_join_arena({_p}, loop-value-1)
 			stop
+	#Generating Arena...
+	if size of {-race::cache::battlemaps::*} = 0:
+		send "&eNo battle maps found." to {_p}
+		stop
 	send "&eNo arenas found, creating one right now..." to {_p}
 	loop 1000 times:
 		if {-race::cache::arena::%loop-value-1%::status} is not set:
@@ -275,77 +517,148 @@ function race_play(p: player):
 			set {-race::cache::arena::%{_arena}%::GameMap} to a random element out of {-race::cache::maps::*}
 			set {-race::cache::arena::%{_arena}%::maxPlayers} to 30
 			race_join_arena({_p}, {_arena})
-			add "%loop-value-1%" to {-race::arenas::*}
+			add "%loop-value-1%" to {-race::cache::arenas::*}
 			stop loop
 	loop 1000 times:
 		set {_PasteCoords} to loop-number*1000
 		if {-race::cache::ArenaGenerator::Region::%{_PasteCoords}%} is not set:
 			set {-race::cache::arena::%{_arena}%::PasteCoords} to {_PasteCoords}
 			set {-race::cache::ArenaGenerator::Region::%{_PasteCoords}%} to true
-			stop loop				
-			
+			stop loop	
+	#Generating Arena...			
+
+function race_find_spawnspot(p: player, arena: text):
+	loop {-race::cache::arena::%{_arena}%::BattleMapSpawns::*}:
+		if {-race::cache::arena::%{_arena}%::BattleMapSpawn::%loop-value-1%::Available} is not set:
+			teleport {_p} to loop-value-1
+			set {-race::cache::arena::%{_arena}%::BattleMapSpawn::%loop-value-1%::Available} to true
+			wait 3 second
+			delete {-race::cache::arena::%{_arena}%::BattleMapSpawn::%loop-value-1%::Available}
+			stop
+	set {_spawnspot} to random element out of {-race::cache::arena::%{_arena}%::BattleMapSpawns::*}
+	teleport {_p} to {_spawnspot}		
+	
+function race_generate_battlemap(arena: text):
+	#Generating Battle Map...
+	set {-race::cache::arena::%{_arena}%::BattleMap} to a random element out of {-race::cache::battlemaps::*}
+	set {-race::cache::arena::%{_arena}%::BattleMapPosition1} to yaml value "BattleMap.%{-race::cache::arena::%{_arena}%::BattleMap}%.Position.1" from "leaf.race.maps"
+	set {-race::cache::arena::%{_arena}%::BattleMapPosition2} to yaml value "BattleMap.%{-race::cache::arena::%{_arena}%::BattleMap}%.Position.2" from "leaf.race.maps"
+
+
+	add {-race::cache::arena::%{_arena}%::PasteCoords} to x-coords of {-race::cache::arena::%{_arena}%::BattleMapPosition1}
+	add {-race::cache::arena::%{_arena}%::PasteCoords} to x-coords of {-race::cache::arena::%{_arena}%::BattleMapPosition2}
+	
+	paste schematic "plugins/LuckyRace/battlemaps/%{-race::cache::arena::%{_arena}%::BattleMap}%.schem" at {-race::cache::arena::%{_arena}%::BattleMapPosition1}
+
+	loop yaml nodes with keys "BattleMap.%{-race::cache::arena::%{_arena}%::BattleMap}%.Spawns" from "leaf.race.maps":
+		if yaml value "BattleMap.%{-race::cache::arena::%{_arena}%::BattleMap}%.Spawns.%loop-value-1%" from "leaf.race.maps" is set:
+			set {_battleMapSpawn} to yaml value "BattleMap.%{-race::cache::arena::%{_arena}%::BattleMap}%.Spawns.%loop-value-1%" from "leaf.race.maps"
+			add {-race::cache::arena::%{_arena}%::PasteCoords} to x-coords of {_battleMapSpawn}
+			add {_battleMapSpawn} to {-race::cache::arena::%{_arena}%::BattleMapSpawns::*}
+	wait a second
+	loop {-race::cache::arena::%{_arena}%::ninjas::*}:
+		race_find_spawnspot(loop-value-1, {_arena})
+		set {-race::cache::player::%loop-value-1%::Lives} to 3
+		race_play_sound(loop-value-1, "NOTE_BASS", "BLOCK_NOTE_BLOCK_BASS")											
+		leaf send title "&cFight!" with subtitle "&e⚔︎" to loop-value-1 with 5 fadein and 5 fadeout for 20		
+	#
+
+function race_luckyblocks_task(locs: locations, distance: number):
+	wait 3 seconds
+	loop {_locs::*}:
+		set {_loc} to loop-value-1
+		add {_distance} to x-coords of {_loc}
+		race_spawn_block({_loc})
+		add 1 to {_wait}
+		if {_wait} is 15:
+			wait a tick
+			set {_wait} to 0
+
 function race_generate_map(arena: text):
-	#Generating arena...
+	#Generating Islands...
 	set {_distance} to yaml value "%{_arena}%.IslandDistance" from "leaf.race.maps"
 	set {-race::cache::arena::%{_arena}%::Position1} to yaml value "%{-race::cache::arena::%{_arena}%::GameMap}%.Position.1" from "leaf.race.maps"
 	set {-race::cache::arena::%{_arena}%::Position2} to yaml value "%{-race::cache::arena::%{_arena}%::GameMap}%.Position.2" from "leaf.race.maps"
 	set {-race::cache::arena::%{_arena}%::Spawn} to yaml value "%{-race::cache::arena::%{_arena}%::GameMap}%.Spawn" from "leaf.race.maps"
-	add {_PasteCoords} to x-coords of {-race::cache::arena::%{_arena}%::Spawn}
+	set {-race::cache::arena::%{_arena}%::Finish} to yaml value "%{-race::cache::arena::%{_arena}%::GameMap}%.Finish" from "leaf.race.maps"	
 
+	set {_PasteCoords} to {-race::cache::arena::%{_arena}%::PasteCoords}
+
+	add {_PasteCoords} to x-coords of {-race::cache::arena::%{_arena}%::Spawn}
+	add {_PasteCoords} to x-coords of {-race::cache::arena::%{_arena}%::Finish}	
 	add {_PasteCoords} to x-coords of {-race::cache::arena::%{_arena}%::Position1}
 	add {_PasteCoords} to x-coords of {-race::cache::arena::%{_arena}%::Position2}
 
-	paste schematic "plugins/LuckyRace/maps/%{-race::cache::arena::%{_arena}%::GameMap}%.schem" at {-race::cache::arena::%{_arena}%::Position1}
-	#Generating arena...	
+	
+	#Blocks...
+	loop yaml list "%{-race::cache::arena::%{_arena}%::GameMap}%.LuckyBlocks" from "leaf.race.maps":
+		set {_loc} to loop-value-1
+		add {_PasteCoords} to x-coords of {_loc}
+		add {_loc} to {_LuckyBlocks::*}
+
+#	paste schematic "plugins/LuckyRace/maps/%{-race::cache::arena::%{_arena}%::GameMap}%.schem" at {-race::cache::arena::%{_arena}%::Position1}
+	#Generating Islands...	
 
 	set {-race::cache::arena::%{_arena}%::MaxHeight} to y-coords of {-race::cache::arena::%{_arena}%::Spawn} + yaml value "Settings.MaxHeight" from "leaf.race.config"
 	
 	set {_spawnLoc} to {-race::cache::arena::%{_arena}%::Position1}
 
+	set {_calculate} to {_distance}
 	loop {-race::cache::arena::%{_arena}%::ninjas::*}:
-	
-		set {-race::cache::player::%loop-value-1%::spawn} to {-race::cache::arena::%{_arena}%::Spawn}
+
 		set {-race::cache::player::%loop-value-1%::checkpoints} to 0
 
 		#must be same value({_distance}).
 		add {_distance} to x-coords of {-race::cache::arena::%{_arena}%::Spawn}
+		add {_distance} to x-coords of {-race::cache::arena::%{_arena}%::Finish}		
 		add {_distance} to x-coords of {_spawnLoc}
 		add {_distance} to x-coords of {-race::cache::arena::%{_arena}%::Position2}
+	
 		#
 		paste schematic "plugins/LuckyRace/maps/%{-race::cache::arena::%{_arena}%::GameMap}%.schem" at {_spawnLoc}
-		wait a tick
+		set {-race::cache::player::%loop-value-1%::spawn} to {-race::cache::arena::%{_arena}%::Spawn}
+		set metadata value "LuckyRaceFinish" of block under {-race::cache::arena::%{_arena}%::Finish} to true
 
-	race_start({_arena})	
-	
+
+		#blocks
+		race_luckyblocks_task({_LuckyBlocks::*}, {_calculate})
+		add {_distance} to {_calculate}
+
+		wait a tick
+	wait a second
+	race_start({_arena})
+
+
 function race_start(arena: text):
 	set {-race::cache::arena::%{_arena}%::status} to "IN-GAME"
 	race_gametime({_arena})
-	wait a second
-	loop {-race::cache::arena::%{_arena}%::ninjas::*}:
-		set {-race::cache::player::%loop-value-1%::GameKills} to 0	
-		set metadata value "RACE_OWNER" of loop-value-1 to loop-value-1
-		teleport loop-value-1 to {-race::cache::player::%loop-value-1%::spawn}
-		race_createBoard(loop-value-1, "RACE-GAME")
-		race_stats(loop-value-1, "add", "PlayedGames")	
+	wait a second	
 	loop 4 times:	
-		loop {-race::cache::arena::%{_arena}%::ninjas::*}:
-			set {_title} to ""
-			set {_subtitle} to ""		
+		loop {-race::cache::arena::%{_arena}%::ninjas::*}:	
 			if loop-number = 1:
-				set {_title} to "&c&n3"		
+				leaf send title "&c&n3" with subtitle "&aUntil the game starts!" to loop-value-2 with 5 fadein and 5 fadeout for 20	
 			if loop-number = 2:
-				set {_title} to "&6&n2"		
+				leaf send title "&6&n2" with subtitle "&aUntil the game starts!" to loop-value-2 with 5 fadein and 5 fadeout for 20		
 			if loop-number = 3:
-				set {_title} to "&e&n1"	
-			if loop-number = 4:
-				set {_title} to "&aGo!"		
+				leaf send title "&e&n1" with subtitle "&aUntil the game starts!" to loop-value-2 with 5 fadein and 5 fadeout for 20	
+			if loop-number = 4:		
+				teleport loop-value-2 to {-race::cache::player::%loop-value-2%::spawn}
+				set {-race::cache::player::%loop-value-2%::Lives} to "Unlimited"	
+				set {-race::cache::player::%loop-value-2%::GameKills} to 0						
+				set metadata value "RACE_OWNER" of loop-value-2 to loop-value-2
+				race_createBoard(loop-value-2, "RACE-GAME")
+				race_stats(loop-value-2, "add", "PlayedGames")					
 				race_play_sound(loop-value-2, "LEVEL_UP", "ENTITY_PLAYER_LEVELUP")
-			else:
-				race_play_sound(loop-value-2, "NOTE_BASS", "BLOCK_NOTE_BLOCK_BASS")			
-		#	loop-number != 2 or 3 or 4 or 5										
-			leaf send title {_title} with subtitle {_subtitle} to loop-value-2 with 5 fadein and 5 fadeout for 20
-		wait a second	
-			
+				set slot 0 of loop-value-2 to iron sword
+				set slot 1 of loop-value-2 to iron pickaxe					
+				set slot 8 of loop-value-2 to crafting table	
+				leaf send title "&aGo!" with subtitle "&eGood Luck!" to loop-value-2 with 5 fadein and 5 fadeout for 25			
+				launch ball large or burst or star coloured red, green, blue, light green, yellow, orange, white and black at {-race::cache::player::%loop-value-2%::spawn} with duration 2				
+			race_play_sound(loop-value-2, "NOTE_BASS", "BLOCK_NOTE_BLOCK_BASS")		
+		wait a second
+
+on join:		
+	race_separe(player)
 
 on quit:
 	if {-race::cache::player::%player%::state} is set:
@@ -353,21 +666,61 @@ on quit:
 	unload yaml "leaf.race.playerdata.%uuid of player%"	
 	delete {-race::cache::player::%player%::*}
 
+on right click:
+	if {-race::cache::player::%player%::state} is set:
+		if event-item is crafting table:
+			cancel event
+			open crafting table to player
+
+on inventory click:
+	if name of player's current inventory is yaml value "Menus.Stats.Menu" from "leaf.race.config":
+		cancel event
+
+on pickup:
+	if {-race::cache::player::%player%::state} is set:
+		if event-item is crafting table:
+			cancel event
+
 on teleport:
 	if {-race::cache::player::%player%::state} is set:
 		"%teleport cause%" is "SPECTATE"
 		cancel event	
 
+function race_add_block(p: player, loc: location, arena: text):
+	loop yaml list "%{_arena}%.LuckyBlocks" from "leaf.race.maps":
+		if loop-value-1 is {_loc}:
+			stop	
+	add {_loc} to yaml list "%{_arena}%.LuckyBlocks" from "leaf.race.maps"
+	save yaml "leaf.race.maps"
+	send "&eLuckyBlock Added." to {_p}
+
+function race_remove_block(p: player, loc: location, arena: text):
+	loop yaml list "%{_arena}%.LuckyBlocks" from "leaf.race.maps":
+		if loop-value-1 is {_loc}:
+			remove {_loc} from yaml list "%{_arena}%.LuckyBlocks" from "leaf.race.maps"
+			save yaml "leaf.race.maps"
+			send "&eLuckyBlock Removed." to {_p}			
+			stop
+	send "&eNo LuckyBlock found to remove." to {_p}
+
 on break:
 	if {-race::cache::player::%player%::state} is "IN-GAME":
 		if {-race::cache::arena::%{-race::cache::player::%player%::arena}%::status} is "IN-GAME":
+			if metadata value "LuckyBlock" of event-block is set:
+				race_break_block(location of event-block)
+				race_play_sound(player, "LEVEL_UP", "ENTITY_PLAYER_LEVELUP")	
+				race_stats(player, "add", "LuckyBlocks")	
+				race_block_surprise(player, location of event-block, "test")
 			if {-race::cache::arena::%{-race::cache::player::%player%::arena}%::OMAE-MO-SHINDEIRU::%location of event-block%} is set:
-				race_stats(player, "add", "BlocksDestroyed")
+				race_stats(player, "add", "BlocksDestroyed")				
 				stop	
 			else:
 				cancel event
 		else:
 			cancel event
+	if metadata value "LuckyBlockSetup" of player is set:
+		if event-block is gold block:
+			race_remove_block(player, location of event-block, metadata value "LuckyBlockSetup" of player)
 
 on place:
 	if {-race::cache::player::%player%::state} is "IN-GAME":	
@@ -380,7 +733,10 @@ on place:
 				set {-race::cache::arena::%{-race::cache::player::%player%::arena}%::OMAE-MO-SHINDEIRU::%location of event-block%} to location of event-block
 		else:
 			cancel event
-			
+	if metadata value "LuckyBlockSetup" of player is set:
+		if event-block is gold block:
+			race_add_block(player, location of event-block, metadata value "LuckyBlockSetup" of player)
+					
 on PlayerArmorStandManipulateEvent:
 	if {-race::cache::player::%event.getPlayer()%::state} is set:	
 		cancel event
@@ -389,19 +745,39 @@ on PlayerInteractEvent:
 	if {-race::cache::player::%event.getPlayer()%::state} is set:	
 		if "%event.getAction()%" is "PHYSICAL":
 			cancel event
+			if "%event.getClickedBlock().getType()%" contains "plate":
+				set {_p} to event.getPlayer()			
+				set {-race::cache::player::%{_p}%::spawn} to location of {_p}
+				event.getClickedBlock().setType(Material.AIR)
+				race_play_sound({_p}, "LEVEL_UP", "ENTITY_PLAYER_LEVELUP")
+				FastParticle.spawnParticle({_p}.getWorld(), ParticleType.FLAME, {_p}.getLocation() and 1)	
+				race_stats({_p}, "add", "Checkpoints")
+				if metadata value "LuckyRaceFinish" of block under event.getClickedBlock() is set:
+					set {_arena} to {-race::cache::player::%{_p}%::arena}
+					if {-race::cache::arena::%{_arena}%::minutes} > 0:
+						set {-race::cache::arena::%{_arena}%::minutes} to 0
+						set {-race::cache::arena::%{_arena}%::gamestate} to "reachedfinsh"
+						set {_message} to replacer "{player}" with "%{_p}%" in yaml value "Messages.Finish" from "leaf.race.config"
+						leaf send title "&6You finished the race!" with subtitle "&cWait for the final stange!" to {_p} with 5 fadein and 5 fadeout for 60
+						loop {-race::cache::arena::%{_arena}%::ninjas::*}:
+							race_play_sound(loop-value-1, "LEVEL_UP", "ENTITY_PLAYER_LEVELUP")
+							send {_message} to loop-value-1
+							
+					#also add some reward.
+					stop		
+				add 1 to {-race::cache::player::%{_p}%::checkpoints}
+				race_stats({_p}, "add", "Checkpoints")
+				send yaml value "Messages.Checkpoint" from "leaf.race.config" to {_p}
 
 on chat:
 	if {-race::cache::player::%player%::state} is set:
 		set {_format} to replacer "{player}" and "{message}" with "%player%" and message in yaml value "Settings.ChatFormat" from "leaf.race.config"
-		loop "PlayedGames", "Wins", "Kills", "Loses", "BlocksDestroyed" and "BlocksPlaced":
+		loop "PlayedGames", "Checkpoints", "Wins", "Kills", "Loses", "BlocksDestroyed", "LuckyBlocks" and "BlocksPlaced":
 			set {_int} to yaml value "Stats.%loop-value-1%" from "leaf.race.playerdata.%uuid of player%"
 			replace all "{%loop-value-1%}" with "%{_int}%" in {_format}
 		set chat format to {_format}
 		set chat recipients to {-race::cache::arena::%{-race::cache::player::%player%::arena}%::ninjas::*}
 
-on drop:
-	if {-race::cache::player::%player%::state} is "IN-GAME":
-		cancel event
 
 on hunger bar change:	
 	if {-race::cache::player::%player%::state} is "IN-GAME":
@@ -409,26 +785,40 @@ on hunger bar change:
 			stop
 		set player's hunger to 20
 
+command short:
+	trigger:
+		set {-race::cache::arena::%{-race::cache::player::%player%::arena}%::minutes} to 0
+		set {-race::cache::arena::%{-race::cache::player::%player%::arena}%::seconds} to 8
+
 function race_gametime(arena: text):	
-	set {-race::cache::arena::%{_arena}%::minutes} to 9
+	set {-race::cache::arena::%{_arena}%::minutes} to yaml value "%{_arena}%.GameTime" from "leaf.race.maps"
 	set {-race::cache::arena::%{_arena}%::seconds} to 60
 	while {-race::cache::arena::%{_arena}%::status} is "IN-GAME":
 		remove 1 from {-race::cache::arena::%{_arena}%::seconds}
 		if {-race::cache::arena::%{_arena}%::seconds} is 0:
 			set {-race::cache::arena::%{_arena}%::seconds} to 59				
-			remove 1 from {-race::cache::arena::%{_arena}%::minutes}				
+			remove 1 from {-race::cache::arena::%{_arena}%::minutes}			
 		if {-race::cache::arena::%{_arena}%::minutes} = 0:
+			if {-race::cache::arena::%{_arena}%::seconds} = 1, 2 or 3:
+				loop {-race::cache::arena::%{_arena}%::ninjas::*}:			
+					race_play_sound(loop-value-1, "NOTE_BASS", "BLOCK_NOTE_BLOCK_BASS")											
+					leaf send title "&cDeathmatch Starts In" with subtitle "&c%{-race::cache::arena::%{_arena}%::seconds}% &cSeconds..." to loop-value-1 with 5 fadein and 5 fadeout for 20
 			if {-race::cache::arena::%{_arena}%::seconds} <= 1:	
-				race_resetarena({_arena})	
-				stop
+				if {-race::cache::arena::%{_arena}%::gamestate} is "deathmatch":	
+					race_resetarena({_arena})
+					stop
+				else:	
+					set {-race::cache::arena::%{_arena}%::gamestate} to "deathmatch"
+					set {-race::cache::arena::%{_arena}%::minutes} to 2
+					set {-race::cache::arena::%{_arena}%::seconds} to 60				
+					race_generate_battlemap({_arena})						
 		wait a second
 
 function race_show_blood(p: player):
 	if {-race::cache::player::%{_p}%::state} is set:
 		set {_w} to world of {_p}
 		set {_loc} to location of {_p}
-		set {_material} to new MaterialData(Material.."REDSTONE_BLOCK")
-		FastParticle.spawnParticle({_w}, ParticleType.BLOCK_CRACK, {_loc}, 3 and {_material})
+		FastParticle.spawnParticle({_w}, ParticleType.BLOCK_CRACK, {_loc}, 3 and {-race::cache::Blood})
 
 function race_win(p: player, arena: text):
 	set {-race::cache::arena::%{_arena}%::status} to "RESTARTING"
@@ -436,6 +826,11 @@ function race_win(p: player, arena: text):
 		set {_msg} to loop-value-1
 		replace all "{PlayerList}" with "%{_p}%" in {_msg}
 		send centered colored {_msg} to {-race::cache::arena::%{_arena}%::ninjas::*}
+	leaf send title "&3&lYOU WON" with subtitle "&7You are the last man standing!" to {_p} with 5 fadein and 5 fadeout for 60
+	launch ball large or burst or star coloured red, green, blue, light green, yellow, orange, white and black at {_p} with duration 2
+	loop {-race::cache::arena::%{_arena}%::BattleMapSpawns::*}:
+		launch ball large or burst or star coloured red, green, blue, light green, yellow, orange, white and black at {_p} with duration 2
+		wait a tick
 	race_stats({_p}, "add", "Wins")
 	loop 10 times:
 		wait a second
@@ -444,13 +839,15 @@ function race_win(p: player, arena: text):
 function race_remove_from_game(p: player, quit: boolean = false):
 	set {_arena} to {-race::cache::player::%{_p}%::arena}
 	remove {_p} from {-race::cache::arena::%{_arena}%::ninjas::*}
-	if size of {-race::cache::arena::%{_arena}%::ninjas::*} = 0 or 1:
+	add {_p} to {-race::cache::arena::%{_arena}%::bad-ninjas::*}
+	if size of {-race::cache::arena::%{_arena}%::ninjas::*} = 0:
+		if {-race::cache::arena::%{_arena}%::status} != "RESTARTING":
+			race_resetarena({_arena})
+			stop		
+	if size of {-race::cache::arena::%{_arena}%::ninjas::*} = 1:
 		if {-race::cache::arena::%{_arena}%::status} = "IN-GAME":
 			set {_result} to random element out of {-race::cache::arena::%{_arena}%::ninjas::*}
 			race_win({_result}, {_arena})
-			stop
-		if {-race::cache::arena::%{_arena}%::status} != "RESTARTING":
-			race_resetarena({_arena})	
 
 function race_player_death(p: player):
 	if metadata value "RACE_DEAD" of {_p} is set:
@@ -458,8 +855,7 @@ function race_player_death(p: player):
 	set metadata value "RACE_DEAD" of {_p} to true
 	race_show_blood({_p})
 	create lightning effect at {_p}
-	set {_killer} to "%metadata value ""RACE_KILLER"" of {_p}%" parsed as player
-	set {_p}'s gamemode to spectator	
+	set {_killer} to "%metadata value ""RACE_KILLER"" of {_p}%" parsed as player	
 	FastParticle.spawnParticle({_p}.getWorld(), ParticleType.EXPLOSION_NORMAL, {_p}.getLocation() and 1)
 	race_stats({_p}, "add", "Loses")
 	if {_killer} is set:
@@ -470,14 +866,21 @@ function race_player_death(p: player):
 		send replacer "{victim}" with "%{_p}%" and "%{_victimColor}%" in yaml value "Messages.Death" from "leaf.race.config" to {-race::cache::arena::%{-race::cache::player::%{_p}%::arena}%::ninjas::*}
 	loop {-race::cache::arena::%{-race::cache::player::%{_p}%::arena}%::ninjas::*}:
 		if metadata value "RACE_KILLER" of loop-value-1 is "%{_p}%":
-			delete metadata value "RACE_KILLER" of loop-value-1
-	race_clear_player({_p})			
-	teleport {_p} to {-race::cache::player::%{_p}%::spawn}
-	#race_remove_from_game({_p})
+			delete metadata value "RACE_KILLER" of loop-value-1	
+	if "%{-race::cache::player::%{_p}%::Lives}%" is "Unlimited":
+		teleport {_p} to {-race::cache::player::%{_p}%::spawn}
+		stop
+	if {-race::cache::player::%{_p}%::Lives} = 1:
+		race_remove_from_game({_p})
+		set {_p}'s gamemode to spectator
+		stop
+	remove 1 from {-race::cache::player::%{_p}%::Lives}
+	race_find_spawnspot({_p}, {-race::cache::player::%{_p}%::arena})
+	race_clear_player({_p}, false)	
 	
 on damage of player:
 	if {-race::cache::player::%victim%::state} is "IN-GAME":
-		if {-race::cache::arena::%{-race::cache::player::%victim%::arena}%::status} is "IN-GAME":			
+		if {-race::cache::arena::%{-race::cache::player::%victim%::arena}%::status} is "IN-GAME":				
 			race_show_blood(victim)
 			set metadata value "RACE_KILLER" of victim to metadata value "RACE_OWNER" of attacker	
 			if damage cause is void:
@@ -492,19 +895,24 @@ on damage of player:
 
 function race_resetarena(arena: text):
 	set {-race::cache::arena::%{_arena}%::status} to "RESTARTING"
-	loop {-race::cache::arena::%{_arena}%::ninjas::*}:
+	loop {-race::cache::arena::%{_arena}%::ninjas::*} and {-race::cache::arena::%{_arena}%::bad-ninjas::*}:
 		teleport loop-value-1 to yaml value "Locations.Lobby" from "leaf.race.data"
 		delete scoreboard of loop-value-1		
 		delete {-race::cache::player::%loop-value-1%::*}				
 		race_clear_player(loop-value-1)	
 		wait a tick	
-	remove {_arena} from {-race::arenas::*}
+	remove {_arena} from {-race::cache::arenas::*}
 	#Free Region	
-	replace blocks between {-race::cache::arena::%{_arena}%::Position1} and {-race::cache::arena::%{_arena}%::Position2} with air
+	if {-race::cache::arena::%{_arena}%::Position1} and {-race::cache::arena::%{_arena}%::Position2} is set:
+		replace blocks between {-race::cache::arena::%{_arena}%::Position1} and {-race::cache::arena::%{_arena}%::Position2} with air
+	wait a second
+	if {-race::cache::arena::%{_arena}%::BattleMapPosition1} and {-race::cache::arena::%{_arena}%::BattleMapPosition2} is set:
+		replace blocks between {-race::cache::arena::%{_arena}%::BattleMapPosition1} and {-race::cache::arena::%{_arena}%::BattleMapPosition2} with air
 	wait a second	
 	delete {-race::cache::ArenaGenerator::Region::%{-race::cache::arena::%{_arena}%::PasteCoords}%}	
 	#Free Region		
 	delete {-race::cache::arena::%{_arena}%::*}		
+	add 1 to {-race::cache::TotalReseting}
 
 function race_createBoard(p: player, t: text):
 	set {_arena} to {-race::cache::player::%{_p}%::arena}
@@ -540,7 +948,8 @@ function race_createBoard(p: player, t: text):
 					replace all "{now}" with "%now%" in {_value}
 					replace all "{player}" with {_p}'s display name in {_value}		
 					replace all "{map}" with "%{-race::cache::arena::%{_arena}%::GameMap}%" in {_value}					
-					replace all "{checkpoints}" with "%{-race::cache::player::%{_p}%::checkpoints}%" in {_value}												
+					replace all "{checkpoints}" with "%{-race::cache::player::%{_p}%::checkpoints}%" in {_value}	
+					replace all "{lives}" with "%{-race::cache::player::%{_p}%::Lives}%" in {_value}															
 					if {-race::cache::arena::%{_arena}%::seconds} <= 9:	
 						replace all "{game-time}" with "%{-race::cache::arena::%{_arena}%::minutes}%:0%{-race::cache::arena::%{_arena}%::seconds}%" in {_value}
 					if {-race::cache::arena::%{_arena}%::seconds} > 9:
@@ -562,16 +971,21 @@ function race_check_yaml(dir: text, value: text, set: text, type: text = "text")
 	if {_type} is "list":
 		yaml list {_value} from "leaf.race.%{_dir}%" is not set
 		loop {_set} split at "||":
-			add loop-value to yaml list {_value} from "leaf.race.%{_dir}%"
+			add loop-value-1 to yaml list {_value} from "leaf.race.%{_dir}%"
 
 on load:
-	loop {-race::arenas::*}:
-		race_resetarena(loop-value-1)
-		wait a second
+	set {-race::cache::Loading} to true
 	loop all players:
 		if {-race::cache::player::%loop-value-1%::state} is set:
 			add loop-value-1 to {_backup::*}
 			wait a tick
+	set {-race::cache::TotalReseting} to 0
+	set {_mustReset} to size of {-race::cache::arenas::*}
+	loop {-race::cache::arenas::*}:
+		race_resetarena(loop-value-1)
+		wait a second
+	while {_mustReset} != {-race::cache::TotalReseting}:
+		wait a second
 	loop currently loaded yaml files:
 		loop-value contains "leaf.race.config" or "leaf.race.playerdata" or "leaf.race.maps"  
 		unload yaml loop-value-1	
@@ -579,49 +993,94 @@ on load:
 	loop "config" and "data":
 		load yaml "plugins/LuckyRace/%loop-value-1%.yml" as "leaf.race.%loop-value-1%"		
 	load yaml "plugins/LuckyRace/maps/maps.yml" as "leaf.race.maps"			
-	race_check_yaml("config", "Settings.ChatFormat", "&a{Wins} &8✦ &7{player} &8» &7{message}")														
+	race_check_yaml("config", "Settings.ChatFormat", "&a{Wins} &8✦ &7{player} &8» &7{message}")		
+	race_check_yaml("config", "Settings.MinimumPlayers", "3", "number")		
+	race_check_yaml("config", "Settings.MaximumPlayers", "30", "number")														
 	race_check_yaml("config", "Settings.MaxHeight", "60", "number")														
 	race_check_yaml("config", "Menus.Stats.Menu", "&8︼︼ &7LuckyRace Stats &8︼︼")		
 	race_check_yaml("config", "Menus.Stats.Name", "&8➭ &e&nYour Stats&r")	
-	race_check_yaml("config", "Menus.Stats.Lore", "||&8♦ &7PlayedGames &a{PlayedGames}||&8♦ &7Wins &a{Wins}||&8♦ &7Kills &a{Kills}||&8♦ &7Checkpoints &a{checkpoints}||&8♦ &7Deaths &a{Loses}||&8♦ &7BlocksPlaced &a{BlocksPlaced}||&8♦ &7BlocksDestroyed &a{BlocksDestroyed}", "list")			
-	race_check_yaml("config", "Scoreboard.Waiting.Name", "&eLucky Race")	
+	race_check_yaml("config", "Menus.Stats.Lore", "&8♦ &7PlayedGames &a{PlayedGames}||&8♦ &7Wins &a{Wins}||&8♦ &7Kills &a{Kills}||&8♦ &7Checkpoints &a{checkpoints}||&8♦ &7Deaths &a{Loses}||&8♦ &7BlocksPlaced &a{BlocksPlaced}||&8♦ &7BlocksDestroyed &a{BlocksDestroyed}", "list")			
+	race_check_yaml("config", "Scoreboard.Waiting.Name", "&e☆ &6Lucky Race &e☆")	
 	race_check_yaml("config", "Scoreboard.Waiting.WAITING", "&aWaiting for players...")	
 	race_check_yaml("config", "Scoreboard.Waiting.STARTING", "&aStarting in: &7{seconds}...")		
 	race_check_yaml("config", "Scoreboard.Waiting.Lines", "&7{now}||||&8♦ &fArena: &a{arena}||||&8♦ &fPlayers: &a{players}/{maxplayers}||||{status}||||&b㋡ &e&nMC.SERVER.NET&r &b㋡", "list")	
-	race_check_yaml("config", "Scoreboard.Game.Name", "&eLucky Race") 	
-	race_check_yaml("config", "Scoreboard.Game.Lines", "&7{now}||||&7❒ &fTime Left ⤵||&8➥ &a{game-time}||||&7❒ &fMap ⤵||&8➥ &7{map}||||&7❒ &c❤ ⤵||&8➥ &a&7Unlimited.||||&7❒ &fCheckpoins &7⤵||&8➥ &a&7{checkpoints}||||&eplay.my-cool-server.net", "list")		
+	race_check_yaml("config", "Scoreboard.Game.Name", "&e☆ &6Lucky Race &e☆") 	
+	race_check_yaml("config", "Scoreboard.Game.Lines", "&7{now}||||&7❒ &fTime Left ⤵||&8➥ &a{game-time}||||&7❒ &fMap ⤵||&8➥ &7{map}||||&7❒ &c❤ ⤵||&8➥ &a&7{lives}.||||&7❒ &fCheckpoins &7⤵||&8➥ &a&7{checkpoints}||||&eplay.my-cool-server.net", "list")		
+	
+	race_check_yaml("config", "LuckyBlocks.Yellow.Id", "2c43fd70-4e96-4d1c-bb85-f44d2eb3f563")	
+	race_check_yaml("config", "LuckyBlocks.Yellow.Texture", "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvNWJhMDlkZDRiMTU2ZjRjZTJlODk3ZjRjMzZhYmRiZDQ2YTk1OTNhNjE4NDU4NjE2ZThkYTM5YTEwYTg1M2Y2In19fQ==")	
+	
+	race_check_yaml("config", "LuckyBlocks.Yellow2.Id", "0e037952-99cb-4690-b305-ef25f6ce1125")	
+	race_check_yaml("config", "LuckyBlocks.Yellow2.Texture", "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvYjNiNzEwYjA4YjUyM2JiYTdlZmJhMDdjNjI5YmEwODk1YWQ2MTEyNmQyNmM4NmJlYjM4NDU2MDNhOTc0MjZjIn19fQ==")	
+
+	race_check_yaml("config", "LuckyBlocks.Purple.Id", "1015f86b-81f3-40aa-8baa-67925ebef4ce")	
+	race_check_yaml("config", "LuckyBlocks.Purple.Texture", "eyJ0ZXh0dXJlcyI6eyJTS0lOIjp7InVybCI6Imh0dHA6Ly90ZXh0dXJlcy5taW5lY3JhZnQubmV0L3RleHR1cmUvODk1NDFhZWI1YjQwMmRjMjUzMzcyZWI0MGRjYWRhZjMyZWY5MmNjYTgzMWJkMzVkMzJiNDE5OTcxMzBjYjJlZSJ9fX0=")	
+
 	race_check_yaml("config", "Messages.ArenaFound", "&a➜ &7Found Arena.")		
 	race_check_yaml("config", "Messages.SearchingArena", "&c➜ &7Searching Arena...")		
 	race_check_yaml("config", "Messages.AlreadySearching", "&c➜ &7You are already searching for a game.")	
+	race_check_yaml("config", "Messages.Checkpoint", "&c➜ &aCheckpoint reached.")	
 	race_check_yaml("config", "Messages.Join", "&7{player} &ehas joined to the game.")	
 	race_check_yaml("config", "Messages.Leave", "&7{player} &eleft the game.")
+	race_check_yaml("config", "Messages.Finish", "&e☆ &7{player} &eFinished the race! &e☆")	
 	race_check_yaml("config", "Messages.Death", "&c➜ {victim} &7died")	
-	race_check_yaml("config", "Messages.Killed", "&c➜ {victim} &7was killed by {killer}")		
+	race_check_yaml("config", "Messages.Killed", "&c➜ {victim} &7was killed by &a{killer}")		
 	race_check_yaml("config", "Messages.Starting", "&eThe game starts in &a{seconds} &eseconds")	
 	race_check_yaml("config", "Messages.AlreadyPlaying", "&eYou are already playing!")		
 	race_check_yaml("config", "Messages.Summary", "&a︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼||||&e✦ &6Lucky Race &e✦||||&7Winner &8➭ {PlayerList}||||&a︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻", "list")			
+	loop yaml nodes with keys "LuckyBlocks" from "leaf.race.config":
+		if yaml value "LuckyBlocks.%loop-value-1%.Id" from "leaf.race.config" and yaml value "LuckyBlocks.%loop-value-1%.Texture" from "leaf.race.config" is set:
+			set {_id} to yaml value "LuckyBlocks.%loop-value-1%.Id" from "leaf.race.config"
+			set {_texture} to yaml value "LuckyBlocks.%loop-value-1%.Texture" from "leaf.race.config"
+			set {_result} to player head with custom nbt "{Unbreakable:1,HideFlags:4,SkullOwner:{Id:""%{_id}%"",Properties:{textures:[{Value:""%{_texture}%""}]}}}"
+			add {_result} to {-race::cache::Items::LuckyBlocks::*}
+
+	set {-race::cache::Blood} to new MaterialData(Material.."REDSTONE_BLOCK")
+	set {-race::cache::Items::Cancel} to yaml value "Menus.Play.Cancel.Item" from "leaf.race.config" parsed as material named yaml value "Menus.Play.Cancel.Name" from "leaf.race.config"
 	loop yaml nodes with keys "" from "leaf.race.maps":
 		if yaml value "%loop-value-1%.State" from "leaf.race.maps" is "ready":
-			add loop-value-1 to {-race::cache::maps::*}		
-	set {-race::cache::Items::Cancel} to yaml value "Menus.Play.Cancel.Item" from "leaf.race.config" parsed as material named yaml value "Menus.Play.Cancel.Name" from "leaf.race.config"
+			add loop-value-1 to {-race::cache::maps::*}
+			load schematic "plugins/LuckyRace/maps/%loop-value-1%.schem"
+			wait a tick
+	loop yaml nodes with keys "BattleMap" from "leaf.race.maps":
+		if yaml value "BattleMap.%loop-value-1%.State" from "leaf.race.maps" is "ready":
+			add loop-value-1 to {-race::cache::battlemaps::*}			
+			load schematic "plugins/LuckyRace/battlemaps/%loop-value-1%.schem"
+			wait a tick
 	set {-race::cache::SB::*} to "&a", "&b", "&c", "&d", "&e", "&1", "&2", "&3", "&4", "&5", "&6", "&7", "&8", "&9" and "&f"
 	send "&7&l--------------------------------------------" to console
 	send " " to console
 	send "&aLoading &ev.{@plugin-version}&a..." to console
-	broadcast "&aLuckyRace loaded!"
+	broadcast "&aLuckyRace loaded! (&c%size of {-race::cache::maps::*}% &aArena maps and &c%size of {-race::cache::battlemaps::*}% &aBattle Maps)"
 	send " " to console
 	send "&7&l--------------------------------------------" to console	
 	if yaml value "Locations.Lobby" from "leaf.race.data" is not set:
 		broadcast "&cSetup &8- &a&cLuckyRace lobby is not set!."	
 	loop "config" and "maps":	
 		save yaml "leaf.race.%loop-value-1%"	
-	loop all players:
+
+	loop "diamond", "iron", "gold", "leather" and "chain":	
+		loop "boots", "leggings", "helmet" and "chestplate":
+			set {_result} to "%loop-value-1% %loop-value-2%" parsed as material
+			if {_result} is set:
+				add {_result} to {-race::cache::LootPool::*}
+		loop "pickaxe", "sword" and "axe":
+			set {_resultOne} to "%loop-value-1% %loop-value-2%" parsed as material
+			if {_resultOne} is set:
+				add {_resultOne} to {-race::cache::LootPool::*}	
+
+	add bow to {-race::cache::LootPool::*}
+	add 6 of arrows to {-race::cache::LootPool::*}	
+	add fishing rod of knockback 2 to {-race::cache::LootPool::*}
+	
+	loop all players: 
 		race_stats(loop-value-1, "check")	
 	loop {_backup::*}:
 		race_clear_player(loop-value-1)		
 		delete scoreboard of loop-value-1			
 		teleport loop-value-1 to yaml value "Locations.Lobby" from "leaf.race.data"						
 		wait a tick
+	delete {-race::cache::Loading}
 
 
 on unload:
