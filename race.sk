@@ -101,7 +101,11 @@ command luckyrace [<text = help>] [<text>] [<text>] [<number>]:
 			race_leave(player)
 		if arg-1 is "start":	
 			if player has permission "luckyrace.start":		
+				if {-race::cache::arena::%{-race::cache::player::%player%::arena}%::status} is "IN-GAME":
+					send "&eAlready starting..."
+					stop
 				race_generate_map({-race::cache::player::%player%::arena})		
+				send replacer "{player}" with player's display name in yaml value "Messages.ForcedStart" from "leaf.race.config" to  {-race::cache::arena::%{-race::cache::player::%player%::arena}%::ninjas::*}
 #
 		if arg-1 is "createBattleMap":	
 			if player has permission "luckyrace.admin":		
@@ -340,6 +344,9 @@ function race_start_countdown(arena: text):
 				send replacer "{seconds}" with "%{-race::cache::arena::%{_arena}%::seconds}%" in yaml value "Messages.Starting" from "leaf.race.config" to {-race::cache::arena::%{_arena}%::ninjas::*}	
 			if {-race::cache::arena::%{_arena}%::seconds} = 1:
 				size of {-race::cache::arena::%{_arena}%::ninjas::*} >= 3:
+					set {-race::cache::arena::%{_arena}%::seconds} to ""
+					send yaml value "Messages.Generating" from "leaf.race.config" to {-race::cache::arena::%{_arena}%::ninjas::*}	
+					wait a second
 					race_generate_map({_arena})
 				else:
 					set {-race::cache::arena::%{_arena}%::status} to "WAITING"
@@ -495,6 +502,7 @@ function race_join_arena(p: player, arena: text):
 	add {_p} to {-race::cache::arena::%{_arena}%::ninjas::*}
 	teleport {_p} to yaml value "Locations.WaitingLobby" from "leaf.race.data"
 	race_createBoard({_p}, "RACE-WAITING")	
+	send replacer "{player}" with {_p}'s display name in yaml value "Messages.Join" from "leaf.race.config" to {-race::cache::arena::%{-race::cache::player::%{_p}%::arena}%::ninjas::*}
 	if {-race::cache::arena::%{_arena}%::status} is "WAITING":
 		if size of {-race::cache::arena::%{_arena}%::ninjas::*} = 3:
 			race_start_countdown({_arena})
@@ -575,6 +583,7 @@ function race_luckyblocks_task(locs: locations, distance: number):
 			set {_wait} to 0
 
 function race_generate_map(arena: text):
+	set {-race::cache::arena::%{_arena}%::status} to "IN-GAME"
 	#Generating Islands...
 	set {_distance} to yaml value "%{_arena}%.IslandDistance" from "leaf.race.maps"
 	set {-race::cache::arena::%{_arena}%::Position1} to yaml value "%{-race::cache::arena::%{_arena}%::GameMap}%.Position.1" from "leaf.race.maps"
@@ -624,13 +633,12 @@ function race_generate_map(arena: text):
 		race_luckyblocks_task({_LuckyBlocks::*}, {_calculate})
 		add {_distance} to {_calculate}
 
-		wait a tick
+		wait 5 ticks
 	wait a second
 	race_start({_arena})
 
 
 function race_start(arena: text):
-	set {-race::cache::arena::%{_arena}%::status} to "IN-GAME"
 	race_gametime({_arena})
 	wait a second	
 	loop 4 times:	
@@ -867,13 +875,12 @@ function race_player_death(p: player):
 	loop {-race::cache::arena::%{-race::cache::player::%{_p}%::arena}%::ninjas::*}:
 		if metadata value "RACE_KILLER" of loop-value-1 is "%{_p}%":
 			delete metadata value "RACE_KILLER" of loop-value-1	
-	if "%{-race::cache::player::%{_p}%::Lives}%" is "Unlimited":
-		teleport {_p} to {-race::cache::player::%{_p}%::spawn}
-		stop
 	if {-race::cache::player::%{_p}%::Lives} = 1:
 		race_remove_from_game({_p})
 		set {_p}'s gamemode to spectator
 		stop
+	if "%{-race::cache::player::%{_p}%::Lives}%" is "Unlimited":
+		teleport {_p} to {-race::cache::player::%{_p}%::spawn}	
 	remove 1 from {-race::cache::player::%{_p}%::Lives}
 	race_find_spawnspot({_p}, {-race::cache::player::%{_p}%::arena})
 	race_clear_player({_p}, false)	
@@ -982,6 +989,8 @@ on load:
 	set {-race::cache::TotalReseting} to 0
 	set {_mustReset} to size of {-race::cache::arenas::*}
 	loop {-race::cache::arenas::*}:
+		delete {-race::cache::arena::%loop-value-1%::ninjas::*}
+		delete {-race::cache::arena::%loop-value-1%::bad-ninjas::*}
 		race_resetarena(loop-value-1)
 		wait a second
 	while {_mustReset} != {-race::cache::TotalReseting}:
@@ -1025,7 +1034,9 @@ on load:
 	race_check_yaml("config", "Messages.Finish", "&e☆ &7{player} &eFinished the race! &e☆")	
 	race_check_yaml("config", "Messages.Death", "&c➜ {victim} &7died")	
 	race_check_yaml("config", "Messages.Killed", "&c➜ {victim} &7was killed by &a{killer}")		
-	race_check_yaml("config", "Messages.Starting", "&eThe game starts in &a{seconds} &eseconds")	
+	race_check_yaml("config", "Messages.Starting", "&eThe game starts in &a{seconds} &eseconds")
+	race_check_yaml("config", "Messages.Generating", "&9➜ &aGenerating the map, please wait...")		
+	race_check_yaml("config", "Messages.ForcedStart", "&c➜ &e{player} &eForced the arena to start.")		
 	race_check_yaml("config", "Messages.AlreadyPlaying", "&eYou are already playing!")		
 	race_check_yaml("config", "Messages.Summary", "&a︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼︼||||&e✦ &6Lucky Race &e✦||||&7Winner &8➭ {PlayerList}||||&a︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻︻", "list")			
 	loop yaml nodes with keys "LuckyBlocks" from "leaf.race.config":
